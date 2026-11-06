@@ -1,25 +1,37 @@
 name: release
 
-# Publishing happens from a tag, not from a laptop: pushing `v<version>` runs the
-# tests and then `npm publish` with provenance. Requires the repository secret
-# NPM_TOKEN (a granular npm token with publish rights for this package).
+# Publishes from a tag with OIDC trusted publishing: no npm token exists, so
+# there is nothing to leak, rotate, or lose to the 2FA-bypass deprecation.
+# One-time setup on npmjs.com: package -> Settings -> Trusted Publisher ->
+# GitHub Actions (user Goutam-11, repo dsh-obsidian-memory, workflow release.yml,
+# "npm publish" allowed). Provenance is attached automatically.
 on:
   push:
     tags: ['v*']
 
 permissions:
   contents: read
-  id-token: write # npm provenance
+  id-token: write # OIDC token for trusted publishing
 
 jobs:
   publish:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: '24'
           registry-url: 'https://registry.npmjs.org'
+
+      - name: npm must support trusted publishing
+        run: |
+          version="$(npm --version)"
+          echo "npm ${version}"
+          if [ "$(printf '%s\n' 11.5.1 "${version}" | sort -V | head -1)" != "11.5.1" ]; then
+            echo "npm ${version} cannot use trusted publishing: needs 11.5.1 or later"
+            exit 1
+          fi
 
       - name: Tag must match package.json
         run: |
@@ -32,6 +44,4 @@ jobs:
       - run: npm test
 
       - name: Publish
-        run: npm publish --provenance --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish

@@ -215,16 +215,28 @@ be merged as soon as CI is green.
 
 ## Release
 
-Publishing runs from CI, not from a laptop:
+Publishing uses **trusted publishing (OIDC)**: GitHub Actions gets a short-lived
+credential from npm for this exact workflow, so there is no npm token to create,
+leak or rotate. That is deliberate — npm is retiring long-lived publish tokens:
+2FA-bypass granular tokens already cannot perform account or package management
+actions (August 2026) and lose direct publishing in early 2027.
+
+**Once, before the first release** (needs a human, because trusted publishers are
+configured on an existing package):
+
+1. Publish the first version from a terminal: `npm login`, then `npm publish` in
+   this repository. `prepublishOnly` runs the test suites first.
+2. On npmjs.com → the package → **Settings → Trusted Publisher** → **GitHub
+   Actions**: organization/user `Goutam-11`, repository `dsh-obsidian-memory`,
+   workflow filename `release.yml`, and enable **`npm publish`** under allowed
+   actions (staged publishing is allowed by default). This needs interactive 2FA.
+
+**Every release after that:**
 
 1. Bump `version` in `package.json` on a branch and merge it through a PR.
-2. Tag and push: `git tag v0.2.0 && git push origin v0.2.0`.
-3. `.github/workflows/release.yml` checks that the tag matches `package.json`,
-   runs `npm test`, and publishes with provenance.
+2. `git tag v0.2.1 && git push origin v0.2.1`.
+3. `.github/workflows/release.yml` checks the tag matches `package.json`, runs
+   `npm test`, and publishes; provenance is attached automatically.
 
-It needs one repository secret, `NPM_TOKEN`: a granular npm token with publish
-access to `dsh-obsidian-memory` (Settings → Secrets and variables → Actions).
-Without it the workflow fails at the publish step; nothing else breaks.
-
-A local `npm publish` also works (`prepublishOnly` runs the tests), and is the
-fallback when CI secrets are unavailable.
+The workflow needs npm CLI ≥ 11.5.1 (it uses Node 24 and fails early on an older
+npm). Remove `publishConfig.access` or the trusted publisher to stop it.
