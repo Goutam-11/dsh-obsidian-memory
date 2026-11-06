@@ -34,9 +34,19 @@ Two scopes:
 | `global` | `<vault>/DeepSeek Memory/global/` | preferences, habits, machine and tooling facts that hold in every project |
 | `project` | `<vault>/DeepSeek Memory/projects/<project-key>/` | decisions, conventions, and gotchas belonging to one working directory |
 
-`<project-key>` is the directory name plus a short hash of its absolute path
-(for example `default-workspace-3a19c8`), so two checkouts with the same folder
-name never share notes.
+`<project-key>` comes from the first of these that applies:
+
+1. **A configured mapping** — `projectKeys: { "/path/prefix": "name" }`; the
+   longest matching prefix wins.
+2. **The git remote** — `owner-repo` derived from `remote.origin.url`, so moving
+   or re-cloning a checkout keeps its notes (a directory anywhere inside the
+   checkout maps to the same key).
+3. **The folder name plus a path hash** — for directories that are not a git
+   repository, e.g. `default-workspace-906c02`.
+
+`memory_status` reports which of the three produced the key. Nothing migrates
+automatically: if a key changes, the old project folder keeps its notes and the
+new key starts empty.
 
 ## What the model gets
 
@@ -101,6 +111,19 @@ defaults so it works with none of them set.
 | `injectCore` | `true` | Show pinned notes at the start of every turn. |
 | `coreMaxBytes` | `4000` | Character budget for those pinned notes. |
 | `recallLimit` | `8` | Default number of recall results. |
+| `projectKeys` | `{}` | Map of absolute path prefix to project key; overrides the git remote and the folder hash. |
+
+### Saving: the duplicate guard
+
+`memory_save` compares a new note against the notes already in the same scope
+before writing. A title that normalises to an obvious near-match is refused with
+the existing note's `id`, `title`, `path` and similarity score, so the caller
+updates that note instead of creating a sibling. A merely similar title is only
+refused when the tags also overlap; a genuinely different fact always saves.
+
+Pass `force: true` to keep a deliberately separate note, and pass `id` to update
+an existing one (updates are never blocked). Scopes are checked independently:
+a global note does not block a project note with the same title.
 
 ## Note format
 

@@ -19,6 +19,9 @@
 #   injectCore: true          # show pinned notes at the start of every turn
 #   coreMaxBytes: 4000
 #   recallLimit: 8
+#   projectKeys: {}           # {"<absolute path prefix>": "<project key>"} overrides the
+#                             # git-remote and folder-hash project keys
+
 - insert:
     - id: obsidian-memory
       name: 'dsh-obsidian-memory'

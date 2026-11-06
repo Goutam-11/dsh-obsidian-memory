@@ -1,6 +1,6 @@
 {
   "name": "dsh-obsidian-memory",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Long-term memory for DeepSeek Harness stored as Obsidian notes: global facts plus per-project notes, written through the Obsidian CLI.",
   "type": "module",
   "main": "index.js",

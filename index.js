@@ -12,7 +12,7 @@
  * @module @local/dsh-obsidian-memory
  */
 import { createCliBridge } from './lib/cli.js'
-import { createStore, projectKeyFor } from './lib/vault.js'
+import { createStore, resolveProjectKey } from './lib/vault.js'
 
 export const name = 'obsidian-memory'
 export const inject = ['tools', 'systemPrompt']
@@ -145,6 +145,7 @@ const STATUS_OUTPUT = {
     memoryRoot: { type: 'string', required: true },
     memoryFolder: { type: 'string', required: true },
     projectKey: { type: 'string', required: true },
+    projectKeySource: { type: 'string', required: true },
     projectDirectory: { type: 'string', required: true },
     preferCli: { type: 'boolean', required: true },
     cliAvailable: { type: 'boolean', required: true },
@@ -161,7 +162,7 @@ const STATUS_OUTPUT = {
       text: [
         `Vault: ${value.vault} (${value.vaultSource})`,
         `Memory root: ${value.memoryRoot}`,
-        `Project: ${value.projectKey || 'none resolved'} · ${value.projectDirectory || 'no working directory'}`,
+        `Project: ${value.projectKey || 'none resolved'} (key from ${value.projectKeySource}) · ${value.projectDirectory || 'no working directory'}`,
         `Global notes: ${value.globalNotes} (${value.globalPinned} pinned)`,
         `Project notes: ${value.projectNotes} (${value.projectPinned} pinned)`,
         `Obsidian CLI: ${value.cliAvailable ? `available, version ${value.cliVersion}` : `unavailable — ${value.cliReason}`}`,
@@ -182,6 +183,10 @@ function resolveConfig(config) {
     injectCore: config.injectCore !== false,
     coreMaxBytes: Number.isFinite(config.coreMaxBytes) ? config.coreMaxBytes : 4000,
     recallLimit: Number.isFinite(config.recallLimit) ? config.recallLimit : 8,
+    projectKeys:
+      config.projectKeys !== null && typeof config.projectKeys === 'object' && !Array.isArray(config.projectKeys)
+        ? config.projectKeys
+        : {},
   }
 }
 
@@ -230,7 +235,8 @@ export function apply(ctx, config) {
 
   function scopeOf(agent) {
     const directory = projectDirectoryOf(ctx, agent)
-    return { directory, projectKey: projectKeyFor(directory) }
+    const { projectKey, source } = resolveProjectKey(directory, { mappings: resolved.projectKeys })
+    return { directory, projectKey, source }
   }
 
   /* Pinned notes are offered to the model without a tool call. Prompt assembly
@@ -294,6 +300,7 @@ export function apply(ctx, config) {
         importance: { type: 'integer', description: '1 to 5, default 3: how likely this is to matter in a later session.' },
         pin: { type: 'boolean', description: 'Show this note to the model every turn. Reserve it for a few essential facts.' },
         id: { type: 'string', description: 'Existing note id or path to rewrite; omit to create a new note.' },
+        force: { type: 'boolean', description: 'Save even when an existing note in this scope looks like the same fact.' },
       }),
       output: SAVE_OUTPUT,
       timeoutMs: 40_000,
@@ -308,6 +315,7 @@ export function apply(ctx, config) {
           tags: args.tags,
           importance: args.importance,
           pin: args.pin,
+          force: args.force === true,
           projectKey,
         })
         if (saved.error !== undefined) throw new Error(saved.error)
@@ -431,7 +439,7 @@ export function apply(ctx, config) {
       parameters: objectSchema({}),
       output: STATUS_OUTPUT,
       async execute(_args, exec) {
-        const { directory, projectKey } = scopeOf(exec.agent)
+        const { directory, projectKey, source } = scopeOf(exec.agent)
         const info = await store.status(projectKey)
         if (info.error !== undefined) throw new Error(info.error)
         return {
@@ -440,6 +448,7 @@ export function apply(ctx, config) {
           memoryRoot: info.memoryRoot,
           memoryFolder: info.memoryFolder,
           projectKey: info.projectKey,
+          projectKeySource: source,
           projectDirectory: directory,
           preferCli: info.preferCli,
           cliAvailable: info.cli.available === true,

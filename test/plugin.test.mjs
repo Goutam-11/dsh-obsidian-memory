@@ -190,6 +190,48 @@ const run = async () => {
     assert.equal(after.results.length, 0)
   })
 
+  await check('memory_status reports where the project key came from', async () => {
+    const status = await findTool('memory_status').execute({}, exec)
+    assert.equal(status.projectKeySource, 'directory')
+    const blocks = findTool('memory_status').output.render({}, status)
+    assert.match(blocks[0].text, /key from directory/)
+  })
+
+  await check('the tool refuses a duplicate and names the existing note', async () => {
+    const first = await findTool('memory_save').execute(
+      { title: 'Deploys run from CI only', content: 'no manual deploys', scope: 'project' },
+      exec,
+    )
+    await assert.rejects(
+      () =>
+        findTool('memory_save').execute(
+          { title: 'Deploys run from CI only', content: 'duplicate attempt', scope: 'project' },
+          exec,
+        ),
+      (error) => /already holds this fact/.test(error.message) && error.message.includes(first.id),
+    )
+  })
+
+  await check('force saves a separate note through the tool', async () => {
+    const first = await findTool('memory_save').execute(
+      { title: 'Retries are idempotent', content: 'a', scope: 'project' },
+      exec,
+    )
+    const forced = await findTool('memory_save').execute(
+      { title: 'Retries are idempotent', content: 'b', scope: 'project', force: true },
+      exec,
+    )
+    assert.notEqual(forced.id, first.id)
+  })
+
+  await check('a config mapping wins over the directory key', async () => {
+    const mapped = createContext()
+    apply(mapped.context, { ...config, projectKeys: { [projectDir]: 'pinned-scope' } })
+    const status = await mapped.tools.find((tool) => tool.name === 'memory_status').execute({}, exec)
+    assert.equal(status.projectKey, 'pinned-scope')
+    assert.equal(status.projectKeySource, 'config')
+  })
+
   await fsp.rm(tempRoot, { recursive: true, force: true })
   console.log(`\n${passed} checks passed`)
 }

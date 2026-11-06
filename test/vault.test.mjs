@@ -9,7 +9,7 @@ import { promises as fsp } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 
-import { createStore, projectKeyFor, parseFrontmatter } from '../lib/vault.js'
+import { createStore, findDuplicate, parseFrontmatter, projectKeyFor, resolveProjectKey, titleSimilarity } from '../lib/vault.js'
 
 const tempRoot = path.join(os.tmpdir(), `dsh-obsidian-memory-${process.pid}-${Date.now()}`)
 const vaultPath = path.join(tempRoot, 'Test Vault')
@@ -155,11 +155,96 @@ const run = async () => {
     assert.match(read.note.content, /pnpm -r build/)
   })
 
-  await check('duplicate titles get distinct ids', async () => {
-    const first = await store.save({ scope: 'global', title: 'Same title', content: 'one', projectKey })
-    const second = await store.save({ scope: 'global', title: 'Same title', content: 'two', projectKey })
-    assert.notEqual(first.note.id, second.note.id)
-    assert.match(second.note.id, /-2$/)
+  await check('a near-identical title is refused and names the existing note', async () => {
+    const first = await store.save({ scope: 'global', title: 'Deploy runs on Sundays', content: 'one', projectKey })
+    const filesBefore = (await fsp.readdir(path.join(vaultPath, 'DeepSeek Memory', 'global'))).length
+
+    const blocked = await store.save({ scope: 'global', title: 'Deploy runs on Sunday', content: 'two', projectKey })
+    assert.match(blocked.error, /already holds this fact/)
+    assert.equal(blocked.duplicate.id, first.note.id)
+    assert.equal(blocked.duplicate.scope, 'global')
+    assert.ok(blocked.duplicate.score >= 0.6, `title similarity too low: ${blocked.duplicate.score}`)
+
+    const filesAfter = (await fsp.readdir(path.join(vaultPath, 'DeepSeek Memory', 'global'))).length
+    assert.equal(filesAfter, filesBefore, 'a refused save must write nothing')
+  })
+
+  await check('force writes the sibling anyway', async () => {
+    const first = await store.save({ scope: 'global', title: 'Rotation windows overlap', content: 'one', projectKey })
+    assert.equal(first.error, undefined)
+    const forced = await store.save({
+      scope: 'global',
+      title: 'Rotation windows overlap',
+      content: 'two',
+      force: true,
+      projectKey,
+    })
+    assert.equal(forced.error, undefined)
+    assert.notEqual(forced.note.id, first.note.id)
+    assert.match(forced.note.id, /-2$/)
+  })
+
+  await check('a different fact with shared tags is not blocked', async () => {
+    await store.save({ scope: 'global', title: 'Prefers pnpm', content: 'pnpm only', tags: ['tooling'], projectKey })
+    const other = await store.save({
+      scope: 'global',
+      title: 'Prefers Zed',
+      content: 'editor choice',
+      tags: ['tooling'],
+      projectKey,
+    })
+    assert.equal(other.error, undefined)
+  })
+
+  await check('scopes are guarded independently', async () => {
+    const inProject = await store.save({
+      scope: 'project',
+      title: 'Prefers pnpm',
+      content: 'this repo only',
+      tags: ['tooling'],
+      projectKey,
+    })
+    assert.equal(inProject.error, undefined)
+    assert.equal(inProject.note.scope, 'project')
+  })
+
+  await check('updating by id is never blocked by the guard', async () => {
+    const created = await store.save({ scope: 'global', title: 'Rotation policy', content: 'v1', projectKey })
+    const updated = await store.save({
+      id: created.note.id,
+      scope: 'global',
+      title: 'Rotation policy',
+      content: 'v2 with more detail',
+      projectKey,
+    })
+    assert.equal(updated.error, undefined)
+    assert.equal(updated.created, false)
+    assert.equal(updated.note.id, created.note.id)
+  })
+
+  await check('title similarity separates near-duplicates from different facts', () => {
+    const near = titleSimilarity('Obsidian setup on this Fedora machine', 'Obsidian setup on Fedora')
+    assert.ok(near >= 0.6 && near < 0.82, `expected a near match below the title-only bar, got ${near}`)
+    assert.equal(titleSimilarity('Same', 'Same'), 1)
+    assert.ok(titleSimilarity('Prefers pnpm', 'Prefers bun') < 0.6)
+  })
+
+  await check('tags carry a merely similar title over the duplicate bar', () => {
+    const existing = {
+      id: 'obsidian-setup',
+      title: 'Obsidian setup on this Fedora machine',
+      tags: ['obsidian', 'fedora', 'tooling'],
+      path: 'DeepSeek Memory/global/obsidian-setup.md',
+      scope: 'global',
+    }
+    // Similar title plus identical tags: flagged.
+    assert.equal(findDuplicate([existing], { title: 'Obsidian setup on Fedora', tags: ['obsidian', 'fedora', 'tooling'] })?.note.id, 'obsidian-setup')
+    // Same title, no tags: the title-only bar is still met.
+    assert.equal(findDuplicate([existing], { title: 'Obsidian setup on this Fedora machine', tags: [] })?.note.id, 'obsidian-setup')
+    // Similar title, unrelated tags: not flagged.
+    assert.equal(findDuplicate([existing], { title: 'Obsidian setup on Fedora', tags: ['cooking'] }), undefined)
+    // Different fact sharing tags: not flagged.
+    assert.equal(findDuplicate([existing], { title: 'Prefers Zed', tags: ['obsidian'] }), undefined)
   })
 
   await check('core returns pinned notes and truncates to the budget', async () => {
@@ -174,7 +259,8 @@ const run = async () => {
     const status = await store.status(projectKey)
     assert.equal(status.vault, vaultPath)
     assert.ok(status.counts.global.notes >= 4)
-    assert.equal(status.counts.project.notes, 1)
+    // The pinned socket note plus the project-scoped duplicate-guard fixture.
+    assert.equal(status.counts.project.notes, 2)
     assert.equal(status.counts.project.pinned, 1)
     assert.equal(status.cli.available, false)
   })
@@ -184,12 +270,18 @@ const run = async () => {
     assert.match(String(read.error), /markdown note|escapes the vault/)
   })
 
+  await check('a bare id that exists in two scopes asks for a path', async () => {
+    // "Prefers pnpm" now exists in both scopes, so the id alone is ambiguous.
+    const ambiguous = await store.read(globalNote.id, projectKey)
+    assert.match(String(ambiguous.error), /more than one scope/)
+  })
+
   await check('forget moves the note to the vault trash', async () => {
-    const removed = await store.forget(globalNote.id, projectKey)
+    const removed = await store.forget(globalNote.path, projectKey)
     assert.equal(removed.deleted, true)
     assert.equal(removed.backend, 'filesystem')
     assert.match(removed.location, /DeepSeek Memory\/\.trash\//)
-    const again = await store.read(globalNote.id, projectKey)
+    const again = await store.read(globalNote.path, projectKey)
     assert.match(String(again.error), /no memory note/)
   })
 
@@ -245,6 +337,46 @@ const run = async () => {
     const removed = await cliStore.forget(projectNote.id, projectKey)
     assert.equal(removed.backend, 'obsidian-cli')
     assert.equal(removed.location, 'trash (restorable)')
+  })
+
+  await check('git remotes give a project key that survives a move', async () => {
+    const { execFileSync } = await import('node:child_process')
+    const repo = path.join(tempRoot, 'work', 'remote-repo')
+    await fsp.mkdir(repo, { recursive: true })
+    execFileSync('git', ['init', '-q'], { cwd: repo })
+    execFileSync('git', ['remote', 'add', 'origin', 'https://github.com/Example-Org/My-Repo.git'], { cwd: repo })
+
+    const first = resolveProjectKey(repo)
+    assert.equal(first.source, 'git-remote')
+    assert.equal(first.projectKey, 'example-org-my-repo')
+
+    const moved = path.join(tempRoot, 'work', 'moved-repo')
+    await fsp.rename(repo, moved)
+    const second = resolveProjectKey(moved)
+    assert.equal(second.projectKey, first.projectKey, 'a move must not change the key')
+  })
+
+  await check('a directory outside git keeps the folder-and-hash key', async () => {
+    const plain = path.join(tempRoot, 'work', 'no-git')
+    await fsp.mkdir(plain, { recursive: true })
+    const resolved = resolveProjectKey(plain)
+    assert.equal(resolved.source, 'directory')
+    assert.equal(resolved.projectKey, projectKeyFor(plain))
+  })
+
+  await check('a config mapping overrides the git remote', async () => {
+    const repo = path.join(tempRoot, 'work', 'remote-repo')
+    const mapped = resolveProjectKey(repo, { mappings: { [path.join(tempRoot, 'work')]: 'work-scope' } })
+    assert.equal(mapped.source, 'config')
+    assert.equal(mapped.projectKey, 'work-scope')
+  })
+
+  await check('the longest matching prefix wins', async () => {
+    const repo = path.join(tempRoot, 'work', 'remote-repo')
+    const mapped = resolveProjectKey(repo, {
+      mappings: { [tempRoot]: 'outer', [path.join(tempRoot, 'work')]: 'inner' },
+    })
+    assert.equal(mapped.projectKey, 'inner')
   })
 
   await fsp.rm(tempRoot, { recursive: true, force: true })
