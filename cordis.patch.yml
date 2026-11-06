@@ -1,0 +1,28 @@
+# dsh-obsidian-memory — long-term memory kept in an Obsidian vault.
+#
+# Registers five model-facing tools (memory_save, memory_recall, memory_read,
+# memory_forget, memory_status) plus two prompt sections: how to use memory,
+# and the pinned notes shown every turn.
+#
+# Notes live under <vault>/DeepSeek Memory/global and
+# <vault>/DeepSeek Memory/projects/<project-key>. Every write goes through the
+# Obsidian CLI when the app is running (and is verified by reading the note
+# back); otherwise the vault file is written directly, so memory keeps working
+# with Obsidian closed.
+#
+# Config (this row's `config`):
+#   vault: ""                 # vault name or id; empty follows the vault Obsidian has open
+#   vaultPath: ""             # absolute vault path; overrides vault
+#   memoryFolder: DeepSeek Memory
+#   preferCli: true           # write and delete through the Obsidian CLI
+#   obsidianBin: ""           # CLI binary; empty searches ~/.local/bin/obsidian and PATH
+#   injectCore: true          # show pinned notes at the start of every turn
+#   coreMaxBytes: 4000
+#   recallLimit: 8
+- insert:
+    - id: obsidian-memory
+      name: 'dsh-obsidian-memory'
+      config:
+        memoryFolder: DeepSeek Memory
+        preferCli: true
+        injectCore: true
