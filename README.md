@@ -185,3 +185,18 @@ area, size and priority:
 
 Each issue states the problem, the proposed approach, the files involved, and the
 acceptance checks; work is expected to keep `npm test` green.
+
+## Contributing
+
+`main` is protected: changes land through a pull request, and the `test` workflow
+(Node 20/22/24) must pass. There is no review requirement, so a solo change can
+be merged as soon as CI is green.
+
+1. Branch from `main`, make the smallest useful change, and add or update a check
+   that fails without it — both suites are plain Node with no dependencies.
+2. `npm test` locally; 31 store checks and 15 plugin checks currently pass.
+3. Open a PR; the template asks for why, what changed, a diagram of the affected
+   flow, and named evidence. Screenshots go in the UI proof section when the
+   change is visible.
+4. Squash merge. Merge commits and rebase merges are disabled, and the branch is
+   deleted on merge, so history stays linear.
