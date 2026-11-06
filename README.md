@@ -150,3 +150,15 @@ tools compute.
 - **`no Obsidian vault found`** — set `vaultPath` in the plugin config.
 - **Project notes missing** — the session has no working directory yet; run a
   command or set the working directory, then `memory_status` shows the key.
+
+## Roadmap
+
+The backlog lives in the issue tracker, one issue per proposed change, labelled by
+area, size and priority:
+
+- [Priority P1](https://github.com/Goutam-11/dsh-obsidian-memory/labels/priority%2FP1) — fix before recommending the plugin to others (duplicate guard, stable project keys, npm publish)
+- [Priority P2](https://github.com/Goutam-11/dsh-obsidian-memory/labels/priority%2FP2) — next release
+- [All open issues](https://github.com/Goutam-11/dsh-obsidian-memory/issues)
+
+Each issue states the problem, the proposed approach, the files involved, and the
+acceptance checks; work is expected to keep `npm test` green.
