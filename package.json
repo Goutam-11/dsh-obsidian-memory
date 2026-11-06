@@ -42,13 +42,16 @@
   "engines": {
     "node": ">=20"
   },
-  "private": true,
   "scripts": {
-    "test": "node test/vault.test.mjs && node test/plugin.test.mjs"
+    "test": "node test/vault.test.mjs && node test/plugin.test.mjs",
+    "prepublishOnly": "npm test"
   },
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"
     }
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

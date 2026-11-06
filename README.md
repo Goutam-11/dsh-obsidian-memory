@@ -9,21 +9,33 @@ modules plus two tests that run on a bare Node 20+.
 
 ## Install
 
-1. Clone this repository anywhere on the machine that runs DeepSeek Harness.
-2. Install the bundle into your profile, either by asking the agent
-   *"install the bundle at /path/to/dsh-obsidian-memory"* (it calls the Plugin
-   Manager with the directory as the target), or from the Plugins page.
-   From a terminal, `dsh plugin --profile <name> add /path/to/dsh-obsidian-memory`
-   installs the package; also list `dsh-obsidian-memory` in the profile's
-   `dsh.profile.bundles`.
-3. Nothing else. The plugin finds the vault Obsidian has open, creates
-   `DeepSeek Memory/` on first save, and registers five tools. Set `vaultPath` in
-   the row config only when you want a vault other than the open one.
-4. Optional but recommended: keep Obsidian running so writes and deletes go
-   through the CLI (see below). Memory works either way.
+Pick a source, then install the bundle into your profile.
+
+**From npm** — `dsh-obsidian-memory` (available from its first published release):
+
+```bash
+dsh plugin --profile <name> add dsh-obsidian-memory
+```
+
+**From a clone** — works today, and is the path for unreleased changes:
+
+```bash
+git clone https://github.com/Goutam-11/dsh-obsidian-memory.git
+dsh plugin --profile <name> add /path/to/dsh-obsidian-memory
+```
+
+Either way, also list `dsh-obsidian-memory` in the profile's `dsh.profile.bundles`
+so the patch layer loads, or install through the Plugins page / by asking the
+agent *"install the bundle dsh-obsidian-memory"*, which does both steps for you.
+
+Then nothing else: the plugin finds the vault Obsidian has open, creates
+`DeepSeek Memory/` on first save, and registers five tools. Set `vaultPath` in the
+row config only when you want a vault other than the open one. Keep Obsidian
+running so writes and deletes go through the CLI (see below); memory works either
+way.
 
 Verify with `memory_status`: it prints the resolved vault, the memory root, the
-current project key, note counts, and whether the CLI answered.
+current project key, its source, note counts, and whether the CLI answered.
 
 ## What it does
 
@@ -200,3 +212,19 @@ be merged as soon as CI is green.
    change is visible.
 4. Squash merge. Merge commits and rebase merges are disabled, and the branch is
    deleted on merge, so history stays linear.
+
+## Release
+
+Publishing runs from CI, not from a laptop:
+
+1. Bump `version` in `package.json` on a branch and merge it through a PR.
+2. Tag and push: `git tag v0.2.0 && git push origin v0.2.0`.
+3. `.github/workflows/release.yml` checks that the tag matches `package.json`,
+   runs `npm test`, and publishes with provenance.
+
+It needs one repository secret, `NPM_TOKEN`: a granular npm token with publish
+access to `dsh-obsidian-memory` (Settings → Secrets and variables → Actions).
+Without it the workflow fails at the publish step; nothing else breaks.
+
+A local `npm publish` also works (`prepublishOnly` runs the tests), and is the
+fallback when CI secrets are unavailable.
